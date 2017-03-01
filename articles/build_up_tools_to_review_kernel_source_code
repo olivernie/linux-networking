@@ -1,0 +1,18 @@
+
+cgrep:
+    alias cgrep='find . | grep "\.[cChH][chHpP]*$" | xargs grep -n --color'
+
+ctags:
+    cd <your_linux_source_dir>
+    ctags -R .
+
+vim:
+    shortcut key:
+    ctrl-]          jump to the definition of current word.
+    ctrl-t          jump back
+    ctrl-w ctrl-]   open new window and jump to the definition of current word.
+    
+    # put tags to vimrc
+    echo "\" search parent dir until finding a tags file" >> ~/.vimrc
+    echo "set tags=tags;\/" >> ~/.vimrc
+
