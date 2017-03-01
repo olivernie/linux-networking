@@ -1,6 +1,8 @@
 
-(1) Use PF_PACKET socket as an example.
-(2) kernel register socket protocol handler for PF_PACKET family.
+In this article, I am going to go through the linux kernel regarding to how linux supports socket interface.
+
+1. Use PF_PACKET socket as an example.
+2. kernel register socket protocol handler for PF_PACKET family.
    when kernel load PACKET module, packet_init is called to finish the registrations. 
      packet_init()
      |-> proto_regiser(&packet_proto, 0);
@@ -9,7 +11,7 @@
      \-> register_netdevice_notifier(&packet_netdev_notifier);
 
 
-  1. proto_regiser(&packet_proto, 0);
+  (1) proto_regiser(&packet_proto, 0);
     Add packet_proto to proto_list. proto_list is global list to hold all registered protocols.
 
     static struct proto packet_proto = {
@@ -18,7 +20,7 @@
         .obj_size = sizeof(struct packet_sock),
     };
 
-  2. sock_register(&packet_family_ops);
+  (2) sock_register(&packet_family_ops);
     Register packet family: net_families[ops->family] = ops;
     Here,  ops is pointer to packet_family_ops, family is PF_PACKET.
 
@@ -28,9 +30,9 @@
         .owner  =   THIS_MODULE,
     };
 
-(3) syscall socket(family, type, protocol)
-  1. in user space, call socket(PF_PACKET, ...) to create a socket.
-  2. in Kernel space, syscall is implemented in net/socket.c: 
+3. syscall socket(family, type, protocol)
+  (1) in user space, call socket(PF_PACKET, ...) to create a socket.
+  (2) in Kernel space, syscall is implemented in net/socket.c: 
      SYSCALL_DEFINE3(socket, int, family, int, type, int, protocol)
      |-> sock_create(family, type, protocol, &sock);
      |   \-> __sock_create(net, family, type, protocol, ...);
