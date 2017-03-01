@@ -1,0 +1,56 @@
+
+(1) Use PF_PACKET socket as an example.
+(2) kernel register socket protocol handler for PF_PACKET family.
+   when kernel load PACKET module, packet_init is called to finish the registrations. 
+     packet_init()
+     |-> proto_regiser(&packet_proto, 0);
+     |-> sock_register(&packet_family_ops);
+     |-> register_pernet_subsys(&packet_net_ops);
+     \-> register_netdevice_notifier(&packet_netdev_notifier);
+
+
+  1. proto_regiser(&packet_proto, 0);
+    Add packet_proto to proto_list. proto_list is global list to hold all registered protocols.
+
+    static struct proto packet_proto = {
+        .name     = "PACKET",
+        .owner    = THIS_MODULE,
+        .obj_size = sizeof(struct packet_sock),
+    };
+
+  2. sock_register(&packet_family_ops);
+    Register packet family: net_families[ops->family] = ops;
+    Here,  ops is pointer to packet_family_ops, family is PF_PACKET.
+
+    static const struct net_proto_family packet_family_ops = {
+        .family =   PF_PACKET,
+        .create =   packet_create,
+        .owner  =   THIS_MODULE,
+    };
+
+(3) syscall socket(family, type, protocol)
+  1. in user space, call socket(PF_PACKET, ...) to create a socket.
+  2. in Kernel space, syscall is implemented in net/socket.c: 
+     SYSCALL_DEFINE3(socket, int, family, int, type, int, protocol)
+     |-> sock_create(family, type, protocol, &sock);
+     |   \-> __sock_create(net, family, type, protocol, ...);
+     |       |-> ...
+     |       |-> sock = sock_alloc();
+     |       |-> struct net_proto_family *pf = net_families[family];
+     |       \-> pf->create(net, sock, protocol, kern); // this is packet_create(), see section 2.
+     |
+     \-> sock_map_fd(sock, flags & (O_CLOEXEC | O_NONBLOCK));
+
+     packet_create(net, sock, protocol)
+     |-> sk = sk_alloc(net, PF_PACKET, ...);
+     |-> sock->ops = &packet_ops;
+     |   sock_init_data(sock, sk);
+     |-> po = pkt_sk(sk);
+     |   po->num = proto,
+     |   po->xmit = dev_queue_xmit;                 // transmit func
+     |   po->prot_hook.func = packet_rcv;           // receive callback
+     |   po->prot_hook.type = proto;
+     \-> sk_add_node_rcu(sk, &net->packet.sklist);  // add socket to packet family sock list.
+
+
+
