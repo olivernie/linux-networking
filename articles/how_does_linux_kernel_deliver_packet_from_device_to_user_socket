@@ -1,8 +1,11 @@
 
-In this article, I am going to go through the linux kernel regarding to how linux supports socket interface.
+1. Introduction
 
-1. Use PF_PACKET socket as an example.
-2. kernel register socket protocol handler for PF_PACKET family.
+In this article, I am going to use PF_PACKET socket as an example to explore how the linux kernel realizes socket APIs.
+
+2. PF_PACKET socket
+
+kernel register socket protocol handler for PF_PACKET family.
    when kernel load PACKET module, packet_init is called to finish the registrations. 
      packet_init()
      |-> proto_regiser(&packet_proto, 0);
@@ -44,7 +47,7 @@ In this article, I am going to go through the linux kernel regarding to how linu
      \-> sock_map_fd(sock, flags & (O_CLOEXEC | O_NONBLOCK));
 
      packet_create(net, sock, protocol)
-     |-> sk = sk_alloc(net, PF_PACKET, ...);
+     |-> sk = sk_alloc(net, AF_PACKET, ...);
      |-> sock->ops = &packet_ops;
      |   sock_init_data(sock, sk);
      |-> po = pkt_sk(sk);
@@ -54,5 +57,61 @@ In this article, I am going to go through the linux kernel regarding to how linu
      |   po->prot_hook.type = proto;
      \-> sk_add_node_rcu(sk, &net->packet.sklist);  // add socket to packet family sock list.
 
+  (3) packet_ops is defined in net/packet/af_packet.c.
+      static const struct proto_ops packet_ops = {
+          .family =   PF_PACKET,
+          .owner =    THIS_MODULE,
+          .release =  packet_release,
+          .bind =     packet_bind,
+          .connect =  sock_no_connect,
+          .socketpair =   sock_no_socketpair,
+          .accept =   sock_no_accept,
+          .getname =  packet_getname,
+          .poll =     packet_poll,
+          .ioctl =    packet_ioctl,
+          .listen =   sock_no_listen,
+          .shutdown = sock_no_shutdown,
+          .setsockopt =   packet_setsockopt,
+          .getsockopt =   packet_getsockopt,
+      #ifdef CONFIG_COMPAT
+          .compat_setsockopt = compat_packet_setsockopt,
+      #endif 
+          .sendmsg =  packet_sendmsg,
+          .recvmsg =  packet_recvmsg,
+          .mmap =     packet_mmap,
+          .sendpage = sock_no_sendpage,
+      };  
 
+4. bind
+  (1) in user space, call bind(sockfd, addr, addrlen);
+  (2) in kernal space, call packet_bind(). See packet_ops.bind in section 3.
 
+5. socksetopt
+  (1) in user space, call setsockopt(sockfd, SOL_PACKET, optname, optval, optlen);
+  (2) in kernel space, call packet_setsockopt(). See packet_ops.setsockopt is section 3.
+
+6. recv, recvfrom or recvmsg
+  (1) in user space, call recv(), recvfrom() or recvmsg().
+  (2) in kernel, space, call packet_recvmsg(). See packet_ops.recvmsg in section 3.
+
+7. send, sendto or sendmsg
+  (1) in user space, call send(), sendto() or sendmsg().
+  (2) in kernel space, call packet_sendmsg(). See packet_ops.sendmsg in section 3.
+
+    packet_sendmsg(struct socket *sock, struct msghdr *msg, size_t len)
+    \-> tpacket_snd()   or   packet_snd()
+        |                    |
+        |  __________________/
+        \ /
+         V
+         struct packet_sock *po = pkt_sk(sk);
+         po->xmit(skb); // see section 3 and section 5.
+         \-> dev_queue_xmit(skb), or ------------------------ packet_direct_xmit(skb) 
+             \->__dev_queue_xmit()                            |
+                \->__dev_xmit_skb if txq->qdisc->enqueue, or  |
+                   dev_hard_start_xmit(skb, dev, txq, &rc)    |
+                   \-> xmit_one()                             /
+                       |  ___________________________________/
+                       \ /
+                        |->netdev_start_xmit(skb, dev, txq, false)
+                          \->dev->netdev_ops->ndo_start_xmit(skb, dev)
